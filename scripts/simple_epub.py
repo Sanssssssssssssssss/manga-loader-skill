@@ -122,6 +122,10 @@ def create_epub(
     *,
     author: str,
     language: str,
+    series_title: str | None,
+    series_index: str | None,
+    description: str,
+    publisher: str,
     background: str,
     jpeg_quality: int,
 ) -> bool:
@@ -138,6 +142,9 @@ def create_epub(
     safe_title = escape(title)
     safe_author = escape(author or "Unknown")
     safe_language = escape(language or "zh-Hans")
+    safe_publisher = escape(publisher or "Manga Loader Skill")
+    safe_description = escape(description or f"Chapter EPUB generated for {title}.")
+    safe_series_title = escape(series_title) if series_title else None
     book_id = f"urn:uuid:{uuid.uuid4()}"
 
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as epub:
@@ -163,6 +170,8 @@ def create_epub(
             f'    <meta refines="#creator" property="file-as">{safe_author}</meta>',
             '    <meta refines="#creator" property="role" scheme="marc:relators">aut</meta>',
             f"    <dc:language>{safe_language}</dc:language>",
+            f"    <dc:publisher>{safe_publisher}</dc:publisher>",
+            f"    <dc:description>{safe_description}</dc:description>",
             f'    <meta property="dcterms:modified">{modified_timestamp()}</meta>',
             '    <meta property="rendition:layout">pre-paginated</meta>',
             '    <meta property="rendition:spread">none</meta>',
@@ -182,6 +191,18 @@ def create_epub(
         for index, _ in enumerate(images):
             opf_lines.append(f'    <itemref idref="page{index:03d}"/>')
         opf_lines.extend(["  </spine>", "</package>"])
+        if safe_series_title:
+            metadata_insert_index = opf_lines.index("  </metadata>")
+            collection_lines = [
+                f'    <meta id="collection" property="belongs-to-collection">{safe_series_title}</meta>',
+                '    <meta refines="#collection" property="collection-type">series</meta>',
+            ]
+            if series_index:
+                collection_lines.append(
+                    f'    <meta refines="#collection" property="group-position">{escape(series_index)}</meta>'
+                )
+            for line in reversed(collection_lines):
+                opf_lines.insert(metadata_insert_index, line)
         epub.writestr("OEBPS/content.opf", "\n".join(opf_lines))
 
         epub.writestr("OEBPS/nav.xhtml", nav_document(title, len(images), language))
@@ -202,6 +223,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("title")
     parser.add_argument("--author", default="Unknown")
     parser.add_argument("--language", default="zh-Hans")
+    parser.add_argument("--series-title")
+    parser.add_argument("--series-index")
+    parser.add_argument("--description", default="")
+    parser.add_argument("--publisher", default="Manga Loader Skill")
     parser.add_argument("--page-background", default="#000000")
     parser.add_argument("--jpeg-quality", type=int, default=90)
     return parser
@@ -215,6 +240,10 @@ def main(argv: list[str]) -> int:
         args.title,
         author=args.author,
         language=args.language,
+        series_title=args.series_title,
+        series_index=args.series_index,
+        description=args.description,
+        publisher=args.publisher,
         background=args.page_background,
         jpeg_quality=args.jpeg_quality,
     ) else 1

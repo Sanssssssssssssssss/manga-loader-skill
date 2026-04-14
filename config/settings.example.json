@@ -15,7 +15,8 @@
     "image_interval_sec": 0.0
   },
   "packaging": {
-    "merged_name": "omnibus.epub",
+    "chapter_name_template": "{series_title} {chapter_label}.epub",
+    "merged_name_template": "{title} 合订版.epub",
     "jpeg_quality": 90,
     "page_background": "#000000"
   }

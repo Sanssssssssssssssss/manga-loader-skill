@@ -42,7 +42,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "image_interval_sec": 0.0,
     },
     "packaging": {
-        "merged_name": "omnibus.epub",
+        "chapter_name_template": "{series_title} {chapter_label}.epub",
+        "merged_name_template": "{title} 合订版.epub",
         "jpeg_quality": 90,
         "page_background": "#000000",
     },
@@ -65,6 +66,34 @@ def safe_path_name(text: str) -> str:
 
 def natural_key(text: str) -> list[object]:
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text)]
+
+
+def chapter_sort_prefix(name: str) -> int | None:
+    match = re.match(r"^\s*(\d+)", name)
+    return int(match.group(1)) if match else None
+
+
+def chapter_display_label(name: str) -> str:
+    match = re.match(r"^\s*\d+\s*(.+?)\s*$", name)
+    if match and match.group(1).strip():
+        return match.group(1).strip()
+    return name.strip()
+
+
+def chapter_output_filename(series_title: str, chapter_dir_name: str) -> str:
+    return f"{safe_path_name(series_title)} {safe_path_name(chapter_display_label(chapter_dir_name))}.epub"
+
+
+def default_merged_filename(title: str) -> str:
+    return f"{safe_path_name(title)} 合订版.epub"
+
+
+def render_name_template(template: str, **values: str) -> str:
+    normalized = {key: str(value).strip() for key, value in values.items()}
+    rendered = template.format(**normalized).strip()
+    if not rendered.lower().endswith(".epub"):
+        rendered = f"{rendered}.epub"
+    return safe_path_name(rendered)
 
 
 def ensure_project_layout() -> dict[str, Path]:
@@ -109,8 +138,13 @@ def run_command(
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     rendered = [str(part) for part in cmd]
-    print(f"[RUN] {' '.join(rendered)}")
-    kwargs: dict[str, Any] = {"check": check, "text": True, "capture_output": capture_output}
+    print(f"[RUN] {' '.join(rendered)}", file=sys.stderr)
+    kwargs: dict[str, Any] = {"check": check, "text": True}
+    if capture_output:
+        kwargs["capture_output"] = True
+    else:
+        kwargs["stdout"] = sys.stderr
+        kwargs["stderr"] = sys.stderr
     if cwd is not None:
         kwargs["cwd"] = str(cwd)
     if env is not None:
@@ -386,6 +420,8 @@ def get_subscription_record(identity_or_title: str) -> dict[str, Any]:
 
 
 def create_subscription(query: str | None, comic_id: str | None, group: str) -> dict[str, Any]:
+    settings = load_settings()
+    packaging = settings.get("packaging", {})
     if comic_id:
         metadata = fetch_comic_metadata(comic_id)
         selected = {"name": metadata.get("name"), "path_word": comic_id}
@@ -419,6 +455,11 @@ def create_subscription(query: str | None, comic_id: str | None, group: str) -> 
         "latest_job_root": None,
         "latest_merged_epub": None,
         "created_at": utc_now(),
+        "preferred_merged_name": render_name_template(
+            str(packaging.get("merged_name_template", "{title} 合订版.epub")),
+            title=str(metadata.get("name") or selected.get("name") or comic_id),
+            series_title=str(metadata.get("name") or selected.get("name") or comic_id),
+        ),
     }
     upsert_subscription_record(record)
     return {"subscription": record, "selected": selected, "candidates": candidates}
@@ -452,6 +493,7 @@ def package_chapter_epubs(
     series_title: str,
     author: str,
     *,
+    chapter_name_template: str,
     language: str,
     page_background: str,
     jpeg_quality: int,
@@ -459,12 +501,28 @@ def package_chapter_epubs(
 ) -> list[Path]:
     epubs_root.mkdir(parents=True, exist_ok=True)
     produced: list[Path] = []
+    used_output_names: set[str] = set()
     for chapter_dir in chapter_directories(group_dir):
-        output_path = epubs_root / f"{chapter_dir.name}.epub"
+        chapter_label = chapter_display_label(chapter_dir.name)
+        sort_prefix = chapter_sort_prefix(chapter_dir.name)
+        base_name = render_name_template(
+            chapter_name_template,
+            series_title=series_title,
+            chapter_label=chapter_label,
+            chapter_name=chapter_dir.name,
+            chapter_index=str(sort_prefix if sort_prefix is not None else chapter_dir.name),
+        )
+        output_name = base_name
+        suffix = 2
+        while output_name in used_output_names:
+            output_name = f"{Path(base_name).stem} ({suffix}).epub"
+            suffix += 1
+        used_output_names.add(output_name)
+        output_path = epubs_root / output_name
         if skip_existing and output_path.exists():
             produced.append(output_path)
             continue
-        chapter_title = f"{series_title} - {chapter_dir.name}"
+        chapter_title = f"{series_title} - {chapter_label}"
         run_runtime_python(
             project_simple_epub_script(),
             [
@@ -475,6 +533,14 @@ def package_chapter_epubs(
                 author,
                 "--language",
                 language,
+                "--series-title",
+                series_title,
+                "--series-index",
+                str(sort_prefix) if sort_prefix is not None else "",
+                "--description",
+                f"Chapter EPUB generated for {series_title} {chapter_label}.",
+                "--publisher",
+                "Manga Loader Skill",
                 "--page-background",
                 page_background,
                 "--jpeg-quality",
@@ -507,6 +573,10 @@ def merge_from_downloaded_chapters(
             author,
             "--language",
             language,
+            "--description",
+            f"Collected edition EPUB for {title}.",
+            "--publisher",
+            "Manga Loader Skill",
             "--page-background",
             page_background,
             "--jpeg-quality",
@@ -595,11 +665,17 @@ def rebuild_merged_from_epubs(
 def copy_outputs_to_library(title: str, epubs_root: Path, merged_epub: Path, merged_name: str, author: str) -> dict[str, Any]:
     layout = ensure_library_layout(title)
     chapter_targets: list[str] = []
+    for existing in layout["chapters"].glob("*.epub"):
+        existing.unlink()
+    for existing in layout["merged"].glob("*.epub"):
+        existing.unlink()
     for source in sorted(epubs_root.glob("*.epub"), key=lambda path: natural_key(path.name)):
         destination = layout["chapters"] / source.name
         shutil.copy2(source, destination)
         chapter_targets.append(str(destination))
     merged_target = layout["merged"] / merged_name
+    if merged_target.exists():
+        merged_target.unlink()
     shutil.copy2(merged_epub, merged_target)
     series_meta = {
         "title": title,
@@ -635,7 +711,12 @@ def execute_pipeline(
     downloads_root = job_root / "downloads"
     epubs_root = job_root / "epubs"
     merged_root = job_root / "merged"
+    epubs_root.mkdir(parents=True, exist_ok=True)
     merged_root.mkdir(parents=True, exist_ok=True)
+    for stale_epub in epubs_root.glob("*.epub"):
+        stale_epub.unlink()
+    for stale_epub in merged_root.glob("*.epub"):
+        stale_epub.unlink()
 
     download_cmd = downloader_base_command(settings) + [
         "download-group",
@@ -656,15 +737,21 @@ def execute_pipeline(
         epubs_root,
         title,
         author,
+        chapter_name_template=str(packaging.get("chapter_name_template", "{series_title} {chapter_label}.epub")),
         language=str(settings.get("language", "zh-Hans")),
         page_background=str(packaging.get("page_background", "#000000")),
         jpeg_quality=int(packaging.get("jpeg_quality", 90)),
         skip_existing=True,
     )
-    merged_file_name = merged_name or str(packaging.get("merged_name", "omnibus.epub"))
+    merged_file_name = merged_name or render_name_template(
+        str(packaging.get("merged_name_template", "{title} 合订版.epub")),
+        title=title,
+        series_title=title,
+    )
+    merged_target_path = merged_root / merged_file_name
     merged_epub = merge_from_downloaded_chapters(
         group_dir,
-        merged_root / merged_file_name,
+        merged_target_path,
         title,
         author,
         language=str(settings.get("language", "zh-Hans")),
@@ -707,7 +794,7 @@ def sync_subscription(record: dict[str, Any], chapter_limit: int | None = None) 
         group=str(record["group"]),
         job_root=subscription_job_root(record),
         chapter_limit=chapter_limit,
-        merged_name="omnibus.epub",
+        merged_name=str(record.get("preferred_merged_name") or ""),
     )
     refreshed = dict(record)
     refreshed["last_checked_at"] = utc_now()

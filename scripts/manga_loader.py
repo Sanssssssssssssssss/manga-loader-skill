@@ -223,7 +223,7 @@ def build_parser() -> argparse.ArgumentParser:
     download.add_argument("--group", default="default")
     download.add_argument("--chapter-limit", type=int)
     download.add_argument("--job-name")
-    download.add_argument("--merged-name", default="omnibus.epub")
+    download.add_argument("--merged-name")
     download.add_argument("--subscribe", action="store_true")
     download.set_defaults(func=command_download_full)
 

@@ -136,6 +136,8 @@ def create_merged_epub(
     *,
     author: str,
     language: str,
+    description: str,
+    publisher: str,
     background: str,
     jpeg_quality: int,
 ) -> bool:
@@ -162,6 +164,8 @@ def create_merged_epub(
     safe_title = escape(title)
     safe_author = escape(author or "Unknown")
     safe_language = escape(language or "zh-Hans")
+    safe_publisher = escape(publisher or "Manga Loader Skill")
+    safe_description = escape(description or f"Collected edition EPUB for {title}.")
     book_id = f"urn:uuid:{uuid.uuid4()}"
 
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as epub:
@@ -187,6 +191,8 @@ def create_merged_epub(
             f'    <meta refines="#creator" property="file-as">{safe_author}</meta>',
             '    <meta refines="#creator" property="role" scheme="marc:relators">aut</meta>',
             f"    <dc:language>{safe_language}</dc:language>",
+            f"    <dc:publisher>{safe_publisher}</dc:publisher>",
+            f"    <dc:description>{safe_description}</dc:description>",
             f'    <meta property="dcterms:modified">{modified_timestamp()}</meta>',
             '    <meta property="rendition:layout">pre-paginated</meta>',
             '    <meta property="rendition:spread">none</meta>',
@@ -226,6 +232,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("title")
     parser.add_argument("--author", default="Unknown")
     parser.add_argument("--language", default="zh-Hans")
+    parser.add_argument("--description", default="")
+    parser.add_argument("--publisher", default="Manga Loader Skill")
     parser.add_argument("--page-background", default="#000000")
     parser.add_argument("--jpeg-quality", type=int, default=90)
     return parser
@@ -239,6 +247,8 @@ def main(argv: list[str]) -> int:
         args.title,
         author=args.author,
         language=args.language,
+        description=args.description,
+        publisher=args.publisher,
         background=args.page_background,
         jpeg_quality=args.jpeg_quality,
     ) else 1

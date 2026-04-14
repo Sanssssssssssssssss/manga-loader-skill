@@ -122,7 +122,8 @@ python3 scripts/manga_loader.py subscriptions run --all
     "image_interval_sec": 0.0
   },
   "packaging": {
-    "merged_name": "omnibus.epub",
+    "chapter_name_template": "{series_title} {chapter_label}.epub",
+    "merged_name_template": "{title} 合订版.epub",
     "jpeg_quality": 90,
     "page_background": "#000000"
   }
@@ -135,7 +136,8 @@ python3 scripts/manga_loader.py subscriptions run --all
 - `default_group`：默认漫画分组，通常保持 `default`
 - `language`：EPUB 语言标签，中文建议用 `zh-Hans` 或 `zh-Hant`
 - `downloader.*`：下载节奏、重试和并发控制
-- `packaging.merged_name`：合订本默认文件名
+- `packaging.chapter_name_template`：章节 EPUB 文件名模板
+- `packaging.merged_name_template`：合订本默认文件名模板
 - `packaging.jpeg_quality`：EPUB 内部 JPEG 质量
 - `packaging.page_background`：页面补边时使用的背景色
 
@@ -228,7 +230,7 @@ python3 scripts/manga_loader.py subscriptions list
 ```bash
 python3 scripts/manga_loader.py rebuild-merged \
   --chapter-epub-dir library/葬送的芙莉蓮/chapters \
-  --output library/葬送的芙莉蓮/merged/rebuilt-omnibus.epub \
+  --output library/葬送的芙莉蓮/merged/葬送的芙莉蓮 合订版.epub \
   --title "葬送的芙莉莲" \
   --author "山田钟人, アベツカサ"
 ```
@@ -237,7 +239,7 @@ python3 scripts/manga_loader.py rebuild-merged \
 
 ```bash
 python3 scripts/manga_loader.py validate-epub \
-  --path library/葬送的芙莉蓮/merged/omnibus.epub
+  --path library/葬送的芙莉蓮/merged/葬送的芙莉蓮 合订版.epub
 ```
 
 ## 仓库结构
