@@ -1,0 +1,4 @@
+interface:
+  display_name: "Manga Loader"
+  short_description: "搜索漫画、建立订阅、产出单章 EPUB 与合订本"
+  default_prompt: "使用 manga-loader 处理这个漫画任务。新环境先执行 bootstrap 和 doctor；如果用户只给漫画标题，先 search，再按需要执行 subscribe --run-now 或 download-full。"

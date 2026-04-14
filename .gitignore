@@ -1,0 +1,9 @@
+.runtime/
+library/
+runs/
+state/
+config/settings.json
+__pycache__/
+*.pyc
+.DS_Store
+vendor/copymanga-headless-rs-src/target/

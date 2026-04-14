@@ -1,0 +1,22 @@
+{
+  "source": "copymanga",
+  "default_group": "default",
+  "language": "zh-Hans",
+  "downloader": {
+    "api_domain": "api.2025copy.com",
+    "download_format": "webp",
+    "api_retries": 5,
+    "retry_base_sec": 1.0,
+    "retry_jitter_sec": 0.5,
+    "risk_wait_sec": 60.0,
+    "chapter_concurrency": 1,
+    "image_concurrency": 2,
+    "chapter_interval_sec": 0.0,
+    "image_interval_sec": 0.0
+  },
+  "packaging": {
+    "merged_name": "omnibus.epub",
+    "jpeg_quality": 90,
+    "page_background": "#000000"
+  }
+}
