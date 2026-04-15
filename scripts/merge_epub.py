@@ -20,6 +20,13 @@ def natural_key(text: str) -> list[object]:
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text)]
 
 
+def chapter_display_label(name: str) -> str:
+    match = re.match(r"^\s*\d+\s*(.+?)\s*$", name)
+    if match and match.group(1).strip():
+        return match.group(1).strip()
+    return name.strip()
+
+
 def chapter_dirs(input_root: Path) -> list[Path]:
     return sorted([path for path in input_root.iterdir() if path.is_dir()], key=lambda path: natural_key(path.name))
 
@@ -136,6 +143,7 @@ def create_merged_epub(
     *,
     author: str,
     language: str,
+    reading_direction: str,
     description: str,
     publisher: str,
     background: str,
@@ -152,7 +160,7 @@ def create_merged_epub(
         images = chapter_images(chapter_dir)
         if not images:
             continue
-        chapter_info.append({"name": chapter_dir.name, "start_page": current_page, "page_count": len(images)})
+        chapter_info.append({"name": chapter_display_label(chapter_dir.name), "start_page": current_page, "page_count": len(images)})
         all_images.extend(images)
         current_page += len(images)
 
@@ -166,6 +174,7 @@ def create_merged_epub(
     safe_language = escape(language or "zh-Hans")
     safe_publisher = escape(publisher or "Manga Loader Skill")
     safe_description = escape(description or f"Collected edition EPUB for {title}.")
+    spine_direction = reading_direction if reading_direction in {"ltr", "rtl"} else None
     book_id = f"urn:uuid:{uuid.uuid4()}"
 
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as epub:
@@ -208,7 +217,8 @@ def create_merged_epub(
             opf_lines.append(
                 f'    <item id="page{index:04d}" href="page{index:04d}.xhtml" media-type="application/xhtml+xml"/>'
             )
-        opf_lines.extend(["  </manifest>", '  <spine page-progression-direction="rtl">'])
+        spine_open = '  <spine page-progression-direction="{0}">'.format(spine_direction) if spine_direction else "  <spine>"
+        opf_lines.extend(["  </manifest>", spine_open])
         for index, _ in enumerate(all_images):
             opf_lines.append(f'    <itemref idref="page{index:04d}"/>')
         opf_lines.extend(["  </spine>", "</package>"])
@@ -232,6 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("title")
     parser.add_argument("--author", default="Unknown")
     parser.add_argument("--language", default="zh-Hans")
+    parser.add_argument("--reading-direction", choices=("ltr", "rtl", "default"), default="ltr")
     parser.add_argument("--description", default="")
     parser.add_argument("--publisher", default="Manga Loader Skill")
     parser.add_argument("--page-background", default="#000000")
@@ -247,6 +258,7 @@ def main(argv: list[str]) -> int:
         args.title,
         author=args.author,
         language=args.language,
+        reading_direction=args.reading_direction,
         description=args.description,
         publisher=args.publisher,
         background=args.page_background,

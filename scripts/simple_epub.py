@@ -122,6 +122,7 @@ def create_epub(
     *,
     author: str,
     language: str,
+    reading_direction: str,
     series_title: str | None,
     series_index: str | None,
     description: str,
@@ -145,6 +146,7 @@ def create_epub(
     safe_publisher = escape(publisher or "Manga Loader Skill")
     safe_description = escape(description or f"Chapter EPUB generated for {title}.")
     safe_series_title = escape(series_title) if series_title else None
+    spine_direction = reading_direction if reading_direction in {"ltr", "rtl"} else None
     book_id = f"urn:uuid:{uuid.uuid4()}"
 
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as epub:
@@ -187,7 +189,8 @@ def create_epub(
             opf_lines.append(
                 f'    <item id="page{index:03d}" href="page{index:03d}.xhtml" media-type="application/xhtml+xml"/>'
             )
-        opf_lines.extend(["  </manifest>", '  <spine page-progression-direction="rtl">'])
+        spine_open = '  <spine page-progression-direction="{0}">'.format(spine_direction) if spine_direction else "  <spine>"
+        opf_lines.extend(["  </manifest>", spine_open])
         for index, _ in enumerate(images):
             opf_lines.append(f'    <itemref idref="page{index:03d}"/>')
         opf_lines.extend(["  </spine>", "</package>"])
@@ -223,6 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("title")
     parser.add_argument("--author", default="Unknown")
     parser.add_argument("--language", default="zh-Hans")
+    parser.add_argument("--reading-direction", choices=("ltr", "rtl", "default"), default="ltr")
     parser.add_argument("--series-title")
     parser.add_argument("--series-index")
     parser.add_argument("--description", default="")
@@ -240,6 +244,7 @@ def main(argv: list[str]) -> int:
         args.title,
         author=args.author,
         language=args.language,
+        reading_direction=args.reading_direction,
         series_title=args.series_title,
         series_index=args.series_index,
         description=args.description,

@@ -15,8 +15,15 @@
     "image_interval_sec": 0.0
   },
   "packaging": {
+    "backend": "kcc_postprocess",
     "chapter_name_template": "{series_title} {chapter_label}.epub",
     "merged_name_template": "{title} 合订版.epub",
+    "split_name_template": "{title} 第{volume_index:02d}册.epub",
+    "split_chapters_per_volume": 40,
+    "reading_direction": "ltr",
+    "kcc_cmd": "",
+    "kcc_profile": "KS",
+    "kcc_extra_args": [],
     "jpeg_quality": 90,
     "page_background": "#000000"
   }

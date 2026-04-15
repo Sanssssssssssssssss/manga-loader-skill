@@ -12,10 +12,12 @@ import sys
 import uuid
 import zipfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional, Tuple
 import xml.etree.ElementTree as ET
+from xml.sax.saxutils import escape
 
 OPF_NS = "http://www.idpf.org/2007/opf"
 DC_NS = "http://purl.org/dc/elements/1.1/"
@@ -48,6 +50,30 @@ class MergePlan:
     description: str
     contributor: str
     chapters: List[ChapterPlan]
+
+
+@dataclass
+class LayoutProfile:
+    rendition_layout: str = "pre-paginated"
+    rendition_spread: str = "none"
+    page_progression_direction: str = "ltr"
+    fixed_layout: str = "true"
+    book_type: str = "comic"
+    primary_writing_mode: str = "horizontal-lr"
+
+
+@dataclass
+class ManifestItemRecord:
+    item_id: str
+    href: str
+    media_type: str
+    properties: Optional[str] = None
+
+
+@dataclass
+class SpineItemRecord:
+    idref: str
+    properties: Optional[str] = None
 
 
 def _ns(tag: str, ns: str) -> str:
@@ -167,6 +193,59 @@ def _ensure_unique_id(base_id: str, used_ids: set[str]) -> str:
     return candidate
 
 
+def _utc_modified() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _first_text(root: Optional[ET.Element], xpath: str) -> Optional[str]:
+    if root is None:
+        return None
+    node = root.find(xpath)
+    if node is None or node.text is None:
+        return None
+    text = node.text.strip()
+    return text or None
+
+
+def _extract_layout_profile(metadata: Optional[ET.Element], spine: ET.Element) -> LayoutProfile:
+    profile = LayoutProfile()
+    if metadata is not None:
+        for meta in metadata.findall(f"{{{OPF_NS}}}meta") + metadata.findall("meta"):
+            name = (meta.attrib.get("name") or "").strip().lower()
+            prop = (meta.attrib.get("property") or "").strip().lower()
+            value = (meta.attrib.get("content") or meta.text or "").strip()
+            if not value:
+                continue
+            if name == "fixed-layout":
+                profile.fixed_layout = value
+            elif name == "book-type":
+                profile.book_type = value
+            elif name == "primary-writing-mode":
+                profile.primary_writing_mode = value
+            elif prop == "rendition:layout":
+                profile.rendition_layout = value
+            elif prop == "rendition:spread":
+                profile.rendition_spread = value
+
+    page_direction = spine.attrib.get("page-progression-direction", "").strip()
+    if page_direction:
+        profile.page_progression_direction = page_direction
+
+    if profile.rendition_layout.lower() != "pre-paginated":
+        profile.rendition_layout = "pre-paginated"
+    # The merged book is one XHTML per page, so a single-page spread hint is safer.
+    profile.rendition_spread = "none"
+    if profile.fixed_layout.lower() not in {"true", "false"}:
+        profile.fixed_layout = "true"
+    if not profile.book_type:
+        profile.book_type = "comic"
+    if not profile.primary_writing_mode:
+        profile.primary_writing_mode = "horizontal-lr"
+    if profile.page_progression_direction not in {"ltr", "rtl"}:
+        profile.page_progression_direction = "ltr"
+    return profile
+
+
 def _first_existing_href(old_to_new_href: Dict[str, str], keys: List[str]) -> Optional[str]:
     """Return the first mapped href from candidate keys."""
     for key in keys:
@@ -259,21 +338,64 @@ def _write_toc_ncx(
     out.writestr("toc.ncx", xml, compress_type=zipfile.ZIP_DEFLATED)
 
 
+def _write_nav_xhtml(
+    out: zipfile.ZipFile,
+    *,
+    title: str,
+    navpoints: List[Tuple[str, str]],
+    page_list_hrefs: List[str],
+    first_body_href: Optional[str],
+) -> None:
+    title_xml = escape(title)
+    lines = [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<!DOCTYPE html>',
+        '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">',
+        "<head>",
+        f"<title>{title_xml}</title>",
+        '<meta charset="utf-8"/>',
+        "</head>",
+        "<body>",
+        '<nav epub:type="toc" id="toc">',
+        "<ol>",
+    ]
+    for label, href in navpoints:
+        lines.append(f'<li><a href="{escape(href)}">{escape(label)}</a></li>')
+    lines.extend(["</ol>", "</nav>", '<nav epub:type="page-list" hidden="hidden">', "<ol>"])
+    for index, href in enumerate(page_list_hrefs, start=1):
+        lines.append(f'<li><a href="{escape(href)}">{index}</a></li>')
+    lines.extend(["</ol>", "</nav>"])
+    if first_body_href:
+        lines.extend(
+            [
+                '<nav epub:type="landmarks" hidden="hidden">',
+                "<ol>",
+                f'<li><a epub:type="bodymatter" href="{escape(first_body_href)}">开始阅读</a></li>',
+                "</ol>",
+                "</nav>",
+            ]
+        )
+    lines.extend(["</body>", "</html>", ""])
+    out.writestr("nav.xhtml", "\n".join(lines).encode("utf-8"), compress_type=zipfile.ZIP_DEFLATED)
+
+
 def _write_content_opf(
     out: zipfile.ZipFile,
     uid: str,
     plan: MergePlan,
-    manifest_items: List[Tuple[str, str, str]],
-    spine_ids: List[str],
+    manifest_items: List[ManifestItemRecord],
+    spine_items: List[SpineItemRecord],
     cover_image_href: Optional[str],
+    layout_profile: LayoutProfile,
 ) -> None:
     """Write merged OPF metadata, manifest, spine, and optional cover guide."""
     package = ET.Element(
         "package",
         attrib={
-            "version": "2.0",
+            "version": "3.0",
             "xmlns": OPF_NS,
             "unique-identifier": "mjnai-merge-id",
+            "prefix": "rendition: http://www.idpf.org/vocab/rendition/#",
         },
     )
 
@@ -295,6 +417,17 @@ def _write_content_opf(
     ET.SubElement(metadata, "dc:language").text = plan.language
     ET.SubElement(metadata, "dc:description").text = plan.description
     ET.SubElement(metadata, "dc:contributor").text = plan.contributor
+    ET.SubElement(metadata, "dc:publisher").text = "Manga Loader Skill"
+    ET.SubElement(metadata, "meta", attrib={"property": "dcterms:modified"}).text = _utc_modified()
+    ET.SubElement(metadata, "meta", attrib={"name": "fixed-layout", "content": layout_profile.fixed_layout})
+    ET.SubElement(metadata, "meta", attrib={"name": "book-type", "content": layout_profile.book_type})
+    ET.SubElement(
+        metadata,
+        "meta",
+        attrib={"name": "primary-writing-mode", "content": layout_profile.primary_writing_mode},
+    )
+    ET.SubElement(metadata, "meta", attrib={"property": "rendition:layout"}).text = layout_profile.rendition_layout
+    ET.SubElement(metadata, "meta", attrib={"property": "rendition:spread"}).text = layout_profile.rendition_spread
 
     if cover_image_href:
         ET.SubElement(metadata, "meta", attrib={"name": "cover", "content": "coverimageid"})
@@ -302,18 +435,35 @@ def _write_content_opf(
     manifest = ET.SubElement(package, "manifest")
     if cover_image_href:
         media = _media_type_from_href(cover_image_href) or "image/jpeg"
-        ET.SubElement(manifest, "item", attrib={"id": "coverimageid", "href": cover_image_href, "media-type": media})
+        ET.SubElement(
+            manifest,
+            "item",
+            attrib={"id": "coverimageid", "href": cover_image_href, "media-type": media, "properties": "cover-image"},
+        )
         ET.SubElement(manifest, "item", attrib={"id": "cover", "href": "cover.xhtml", "media-type": "application/xhtml+xml"})
     ET.SubElement(manifest, "item", attrib={"id": "ncx", "href": "toc.ncx", "media-type": "application/x-dtbncx+xml"})
+    ET.SubElement(
+        manifest,
+        "item",
+        attrib={"id": "nav", "href": "nav.xhtml", "media-type": "application/xhtml+xml", "properties": "nav"},
+    )
 
-    for item_id, href, media_type in manifest_items:
-        ET.SubElement(manifest, "item", attrib={"id": item_id, "href": href, "media-type": media_type})
+    for item in manifest_items:
+        attrib = {"id": item.item_id, "href": item.href, "media-type": item.media_type}
+        if item.properties:
+            attrib["properties"] = item.properties
+        ET.SubElement(manifest, "item", attrib=attrib)
 
-    spine = ET.SubElement(package, "spine", attrib={"toc": "ncx"})
-    if cover_image_href:
-        ET.SubElement(spine, "itemref", attrib={"idref": "cover", "linear": "yes"})
-    for sid in spine_ids:
-        ET.SubElement(spine, "itemref", attrib={"idref": sid, "linear": "yes"})
+    spine = ET.SubElement(
+        package,
+        "spine",
+        attrib={"toc": "ncx", "page-progression-direction": layout_profile.page_progression_direction},
+    )
+    for item in spine_items:
+        attrib = {"idref": item.idref, "linear": "yes"}
+        if item.properties:
+            attrib["properties"] = item.properties
+        ET.SubElement(spine, "itemref", attrib=attrib)
 
     if cover_image_href:
         guide = ET.SubElement(package, "guide")
@@ -337,7 +487,7 @@ def _write_cover_xhtml(out: zipfile.ZipFile, cover_href: str) -> None:
 
 
 def merge(plan: MergePlan) -> None:
-    """Merge chapter EPUBs into one EPUB2 archive based on plan order."""
+    """Merge chapter EPUBs into one fixed-layout EPUB archive based on plan order."""
     out_path = Path(plan.output_epub_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -345,14 +495,16 @@ def merge(plan: MergePlan) -> None:
     tmp_path = Path(tmp_file.name)
     tmp_file.close()
 
-    manifest_items: List[Tuple[str, str, str]] = []
-    spine_ids: List[str] = []
+    manifest_items: List[ManifestItemRecord] = []
+    spine_items: List[SpineItemRecord] = []
     navpoints: List[Tuple[str, str]] = []
+    page_list_hrefs: List[str] = []
     seen_hrefs = set()
     seen_manifest_hrefs: Dict[str, str] = {}
-    used_manifest_ids: set[str] = {"ncx", "cover", "coverimageid"}
+    used_manifest_ids: set[str] = {"ncx", "nav", "cover", "coverimageid"}
 
     cover_href: Optional[str] = None
+    layout_profile: Optional[LayoutProfile] = None
     uid = f"urn:uuid:{uuid.uuid4()}"
 
     try:
@@ -388,6 +540,8 @@ def merge(plan: MergePlan) -> None:
 
                     if manifest is None or spine is None:
                         raise MergeError(f"invalid opf in {epub_path}: missing manifest/spine")
+                    if layout_profile is None:
+                        layout_profile = _extract_layout_profile(metadata, spine)
 
                     # Namespace each source book under "<index>/" to avoid
                     # href/id collisions between different chapter EPUBs.
@@ -408,7 +562,10 @@ def merge(plan: MergePlan) -> None:
                         old_id = item.attrib.get("id", "")
                         href = item.attrib.get("href", "")
                         media_type = item.attrib.get("media-type", "application/octet-stream")
+                        properties = item.attrib.get("properties", "").split()
                         if not href:
+                            continue
+                        if "nav" in properties or media_type == "application/x-dtbncx+xml":
                             continue
 
                         src_name = _norm(posixpath.join(root_dir, href))
@@ -442,7 +599,14 @@ def merge(plan: MergePlan) -> None:
                             base_id = f"c{chapter_index}_{_safe_id(old_id or Path(href).stem)}"
                             new_id = _ensure_unique_id(base_id, used_manifest_ids)
                             seen_manifest_hrefs[dst_name] = new_id
-                            manifest_items.append((new_id, dst_name, normalized_media_type))
+                            manifest_items.append(
+                                ManifestItemRecord(
+                                    item_id=new_id,
+                                    href=dst_name,
+                                    media_type=normalized_media_type,
+                                    properties=" ".join(properties) if properties else None,
+                                )
+                            )
 
                         if old_id:
                             old_to_new_id[old_id] = new_id
@@ -456,9 +620,17 @@ def merge(plan: MergePlan) -> None:
                         new_idref = old_to_new_id.get(old_idref)
                         if not new_idref:
                             continue
-                        spine_ids.append(new_idref)
+                        spine_items.append(
+                            SpineItemRecord(
+                                idref=new_idref,
+                                properties=itemref.attrib.get("properties", "").strip() or None,
+                            )
+                        )
+                        page_href = old_to_new_href.get(old_idref)
+                        if page_href is not None:
+                            page_list_hrefs.append(page_href)
                         if first_spine_href is None:
-                            first_spine_href = old_to_new_href.get(old_idref)
+                            first_spine_href = page_href
 
                     if first_spine_href is None:
                         raise MergeError(f"cannot resolve first spine item for {epub_path}")
@@ -473,13 +645,21 @@ def merge(plan: MergePlan) -> None:
                 _write_cover_xhtml(out, cover_href)
 
             _write_toc_ncx(out, uid=uid, title=plan.title, navpoints=navpoints)
+            _write_nav_xhtml(
+                out,
+                title=plan.title,
+                navpoints=navpoints,
+                page_list_hrefs=page_list_hrefs,
+                first_body_href=navpoints[0][1] if navpoints else None,
+            )
             _write_content_opf(
                 out,
                 uid=uid,
                 plan=plan,
                 manifest_items=manifest_items,
-                spine_ids=spine_ids,
+                spine_items=spine_items,
                 cover_image_href=cover_href,
+                layout_profile=layout_profile or LayoutProfile(),
             )
             # Match epubmerge behavior: mark entries as Windows-created to
             # avoid platform-specific permission quirks when extracted.
