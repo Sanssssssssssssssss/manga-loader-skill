@@ -45,6 +45,13 @@ cd manga-loader-skill
 python3 scripts/manga_loader.py bootstrap
 ```
 
+如果你要把它安装成宿主本地 skill，当前最稳的方式是直接完整 clone 到技能目录，例如：
+
+```bash
+git clone https://github.com/Sanssssssssssssssss/manga-loader-skill.git \
+  ~/.codex/skills/manga-loader
+```
+
 如果你的 Agent 平台支持基于 Git 仓库挂载技能，只要它能：
 
 - 读取 `SKILL.md`
@@ -52,6 +59,12 @@ python3 scripts/manga_loader.py bootstrap
 - 访问本地文件系统
 
 就可以直接复用这套技能。
+
+注意：
+
+- 这个仓库的根目录本身就是 skill 目录
+- 某些通用 GitHub skill installer 在对根目录 skill 做 sparse checkout 时，可能只拿到顶层文件，导致 `scripts/`、`vendor/` 等目录缺失
+- 如果安装后发现 skill 目录里缺少这些子目录，改用完整 clone，或让安装器走 full download / full repo 模式
 
 ## 核心亮点
 
