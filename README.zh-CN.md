@@ -185,6 +185,16 @@ Agent 应通过 `report.json`、`validation.valid`、`audit.reader_ready` 判断
 python3 -m unittest discover -s tests
 ```
 
+## 上游参考
+
+这个工作流参考了以下项目：
+
+- [Kindle Comic Converter (KCC)](https://github.com/ciromattia/kcc)：漫画 EPUB 相关约定
+- [copymanga-downloader](https://github.com/lanyeeee/copymanga-downloader)：拷贝漫画下载行为
+- [MangaEpubAutomation](https://github.com/YuxuanHan0326/MangaEpubAutomation)：漫画转 EPUB 工作流思路
+
+许可证说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
 ## 声明
 
 本项目不是拷贝漫画官方客户端，也不隶属于任何内容提供方。请只在你有权访问和归档内容的前提下使用，并遵守源站规则、版权要求和所在地法律。

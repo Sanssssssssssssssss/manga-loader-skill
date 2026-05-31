@@ -185,6 +185,16 @@ Main sections:
 python3 -m unittest discover -s tests
 ```
 
+## Upstream References
+
+This workflow builds on and references:
+
+- [Kindle Comic Converter (KCC)](https://github.com/ciromattia/kcc) for comic-oriented EPUB conventions
+- [copymanga-downloader](https://github.com/lanyeeee/copymanga-downloader) for CopyManga download behavior
+- [MangaEpubAutomation](https://github.com/YuxuanHan0326/MangaEpubAutomation) for manga-to-EPUB workflow ideas
+
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for license notes.
+
 ## Disclaimer
 
 This project is not affiliated with CopyManga or any content provider. Use it only where you have the right to access and archive the content. Respect source-site terms, copyright law, and local regulations.
