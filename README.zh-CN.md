@@ -1,8 +1,8 @@
-# CopyManga EPUB Downloader
+# 拷贝漫画 EPUB 下载器
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-An unofficial CopyManga / 拷贝漫画 downloader and fixed-layout EPUB workflow for local CLI use and agent skills.
+非官方 CopyManga / 拷贝漫画下载与 fixed-layout EPUB 打包工作流，可直接作为 CLI 工具使用，也可作为本地 Agent Skill 使用。
 
 <p>
   <img src="https://img.shields.io/badge/Source-CopyManga-16a34a?style=flat-square" alt="CopyManga" />
@@ -11,19 +11,19 @@ An unofficial CopyManga / 拷贝漫画 downloader and fixed-layout EPUB workflow
   <img src="https://img.shields.io/badge/License-MIT-black?style=flat-square" alt="License" />
 </p>
 
-## Features
+## 功能
 
-- Search CopyManga by title or `comic_id`
-- Download chapter images
-- Build per-chapter fixed-layout EPUB files
-- Build merged omnibus EPUB files
-- Split long series into volume EPUBs
-- Resume partial downloads with `--resume`
-- Validate EPUB structure, page counts, and fixed-layout metadata
-- Publish final files into a stable local `library/`
-- Optional external library layout: `分章/`, `合订本/完整版.epub`, `历史备份/`
+- 按标题或 `comic_id` 搜索拷贝漫画
+- 下载章节图片
+- 生成单章 fixed-layout EPUB
+- 生成合订本 EPUB
+- 按章节数把长篇拆成分册 EPUB
+- 用 `--resume` 续跑未完成下载
+- 校验 EPUB 结构、页数和漫画 fixed-layout 元数据
+- 发布最终结果到稳定 `library/`
+- 可选发布到外部书库结构：`分章/`、`合订本/完整版.epub`、`历史备份/`
 
-## Installation
+## 安装
 
 ```bash
 git clone https://github.com/Sanssssssssssssssss/manga-loader-skill.git
@@ -31,84 +31,84 @@ cd manga-loader-skill
 python3 scripts/manga_loader.py bootstrap
 ```
 
-Requirements:
+要求：
 
 - Python 3.11+
-- Linux or a Linux-like shell environment
-- Network access to the CopyManga API
-- Rust/Cargo only when the bundled downloader binary cannot run on your platform
+- Linux 或类 Linux shell 环境
+- 能访问 CopyManga API
+- 如果内置下载器二进制不适配当前平台，需要 Rust/Cargo 重新构建
 
-The repository root is also the agent skill directory. To install it as a local Codex skill:
+仓库根目录本身也是 skill 目录。安装到本地 Codex skill：
 
 ```bash
 git clone https://github.com/Sanssssssssssssssss/manga-loader-skill.git \
   ~/.codex/skills/manga-loader
 ```
 
-Use a full clone. Sparse installers may miss `scripts/`, `vendor/`, or other required directories.
+请使用完整 clone。某些 sparse installer 可能漏掉 `scripts/`、`vendor/` 等必要目录。
 
-## Usage
+## 用法
 
 ```bash
-# Health check
+# 环境体检
 python3 scripts/manga_loader.py doctor --check-network
 
-# Search
+# 搜索
 python3 scripts/manga_loader.py search --query "葬送的芙莉莲"
 
-# Download and build EPUB output
+# 下载并生成 EPUB
 python3 scripts/manga_loader.py download-full --query "葬送的芙莉莲"
 
-# Smoke test with one chapter
+# 只下载 1 章做 smoke test
 python3 scripts/manga_loader.py download-full --query "葬送的芙莉莲" --chapter-limit 1
 
-# Resume an incomplete run
+# 续跑未完成任务
 python3 scripts/manga_loader.py download-full --query "葬送的芙莉莲" --resume
 
-# Build split volumes
+# 生成分册
 python3 scripts/manga_loader.py download-full \
   --query "葬送的芙莉莲" \
   --split-chapters-per-volume 40
 
-# Create a subscription and run it once
+# 创建订阅并立即执行
 python3 scripts/manga_loader.py subscribe --query "葬送的芙莉莲" --run-now
 
-# Refresh all enabled subscriptions
+# 刷新全部订阅
 python3 scripts/manga_loader.py subscriptions run --all
 ```
 
-CopyManga search usually works best with Chinese titles or a known `comic_id`.
+CopyManga 搜索通常使用中文标题或已知 `comic_id` 更稳定。
 
-## EPUB Checks
+## EPUB 检查
 
 ```bash
-# Validate EPUB structure
+# 结构校验
 python3 scripts/manga_loader.py validate-epub \
   --path "library/<title>/merged/<file>.epub"
 
-# Compare chapter pages with merged or split outputs
+# 页数对账
 python3 scripts/manga_loader.py compare-pages \
   --chapter-epub-dir "library/<title>/chapters" \
   --merged "library/<title>/merged/<file>.epub"
 
-# Audit fixed-layout comic metadata
+# fixed-layout 漫画语义审计
 python3 scripts/epub_audit.py --path "library/<title>/merged/<file>.epub"
 
-# Repeated validation for large EPUB files
+# 大文件重复校验
 python3 scripts/epub_pressure.py --path "library/<title>/merged/<file>.epub"
 ```
 
-## Rebuild
+## 重建
 
 ```bash
-# Rebuild a merged EPUB from existing chapter EPUBs
+# 从现有单章 EPUB 重建合订本
 python3 scripts/manga_loader.py rebuild-merged \
   --chapter-epub-dir "library/<title>/chapters" \
   --output "library/<title>/merged/<title> 合订版.epub" \
   --title "<title>" \
   --author "<author>"
 
-# Rebuild split volumes
+# 从现有单章 EPUB 重建分册
 python3 scripts/manga_loader.py rebuild-split \
   --chapter-epub-dir "library/<title>/chapters" \
   --output-dir "library/<title>/volumes" \
@@ -117,7 +117,7 @@ python3 scripts/manga_loader.py rebuild-split \
   --chapters-per-volume 40
 ```
 
-## Output Layout
+## 输出结构
 
 ```text
 library/<title>/
@@ -136,21 +136,21 @@ runs/<job-name>/
 state/subscriptions.json
 ```
 
-- `library/`: stable reading output
-- `runs/`: intermediate data and debug reports
-- `state/`: subscription state
+- `library/`：稳定阅读产物
+- `runs/`：过程数据和调试报告
+- `state/`：订阅状态
 
-Local runtime directories are not committed. A fresh clone creates its own `config/settings.json`, `runs/`, `library/`, and `state/` during setup and use.
+本机运行目录不会提交到仓库。新 clone 第一次执行 `bootstrap` 和下载命令后，会生成自己的 `config/settings.json`、`runs/`、`library/`、`state/`。
 
-## External Library Publishing
+## 外部书库发布
 
-Set `publish.mangabooks_root` in `config/settings.json`, then run:
+在 `config/settings.json` 配置 `publish.mangabooks_root` 后运行：
 
 ```bash
 python3 scripts/manga_loader.py publish-library --title "<title>"
 ```
 
-Output:
+输出：
 
 ```text
 <mangabooks_root>/<title>/
@@ -161,33 +161,33 @@ Output:
 
 ## Agent Skill
 
-This repository includes `SKILL.md` for Codex, Claude Code, and other local agents. The stable public entry point is:
+仓库包含 `SKILL.md`，可被 Codex、Claude Code 或其他本地 Agent 读取。稳定公开入口是：
 
 ```bash
 python3 scripts/manga_loader.py <subcommand>
 ```
 
-Agents should use `report.json`, `validation.valid`, and `audit.reader_ready` to decide whether a run succeeded.
+Agent 应通过 `report.json`、`validation.valid`、`audit.reader_ready` 判断任务是否成功。
 
-## Configuration
+## 配置
 
-`bootstrap` creates `config/settings.json` from `config/settings.example.json`.
+`bootstrap` 会基于 `config/settings.example.json` 生成 `config/settings.json`。
 
-Main sections:
+主要配置：
 
-- `downloader`: API domain, retry policy, and concurrency
-- `packaging`: EPUB naming, KCC profile, reading direction, split policy
-- `publish`: external library root, merged filename, archive policy
+- `downloader`：API 域名、重试、并发
+- `packaging`：EPUB 命名、KCC profile、阅读方向、分册策略
+- `publish`：外部书库根目录、合订本文件名、历史备份策略
 
-## Testing
+## 测试
 
 ```bash
 python3 -m unittest discover -s tests
 ```
 
-## Disclaimer
+## 声明
 
-This project is not affiliated with CopyManga or any content provider. Use it only where you have the right to access and archive the content. Respect source-site terms, copyright law, and local regulations.
+本项目不是拷贝漫画官方客户端，也不隶属于任何内容提供方。请只在你有权访问和归档内容的前提下使用，并遵守源站规则、版权要求和所在地法律。
 
 ## License
 
