@@ -1,11 +1,14 @@
-# Manga Loader Skill
+# CopyManga EPUB Downloader Skill / 拷贝漫画 EPUB 下载 Skill
 
-面向通用 Agent 的漫画搜索、订阅、下载、EPUB 打包与分册合订技能。
+面向 Agent 和 CLI 的拷贝漫画下载器：搜索 CopyManga / 拷贝漫画，下载章节图片，生成 fixed-layout EPUB、合订本和分册，并把结果发布到稳定本地书库。
+
+An agent-friendly CopyManga downloader and EPUB packaging workflow. Search manga, download chapters, build fixed-layout EPUB files, merge or split volumes, validate the output, and publish everything into a stable local library.
 
 <div>
   <img src="https://img.shields.io/badge/Agent%20Skill-CLI%20First-2563eb?style=flat-square" alt="Agent Skill" />
-  <img src="https://img.shields.io/badge/Source-CopyManga-16a34a?style=flat-square" alt="Source" />
+  <img src="https://img.shields.io/badge/CopyManga-Downloader-16a34a?style=flat-square" alt="CopyManga Downloader" />
   <img src="https://img.shields.io/badge/EPUB-Fixed%20Layout-f59e0b?style=flat-square" alt="EPUB" />
+  <img src="https://img.shields.io/badge/Output-EPUB%20%7C%20Omnibus%20%7C%20Volumes-7c3aed?style=flat-square" alt="Output Formats" />
   <img src="https://img.shields.io/badge/Output-Stable%20Library-7c3aed?style=flat-square" alt="Output" />
   <img src="https://img.shields.io/badge/License-MIT-black?style=flat-square" alt="License" />
 </div>
@@ -13,7 +16,9 @@
 ---
 
 **Manga Loader Skill** 把“我想看这部漫画”变成一条可执行、可恢复、可审计的本地工作流。
-它是一个面向任意 Agent / CLI 环境的通用技能仓库。
+它既可以当普通命令行工具使用，也可以作为 Codex、Claude Code 或其他本地 Agent 的 skill 仓库使用。
+
+关键词 / Keywords: 拷贝漫画下载器, 拷贝漫画 EPUB, CopyManga downloader, manga downloader, manga EPUB, fixed-layout EPUB, agent skill, Codex skill.
 
 给定漫画标题或 `comic_id`，它可以完成：
 
@@ -25,15 +30,28 @@
 - 按章节数或体积限制生成分册合订
 - 校验页数、结构、fixed-layout 语义与大书稳定性
 - 把最终结果稳定发布到 `library/<漫画名>/`
+- 可选发布到外部漫画书库布局：`分章/`、`合订本/完整版.epub`、`历史备份/`
+
+## 为什么看这个项目
+
+成熟漫画下载器通常解决“下载”和“格式转换”；这个仓库额外解决 Agent 场景最容易出错的几件事：
+
+- CLI 入口固定，Agent 不需要猜内部脚本。
+- `runs/` 和 `library/` 分离，调试产物不会混进最终书库。
+- 每次任务都有 `report.json`，可以机器判定是否成功。
+- EPUB 输出会做结构校验、页数对账和 fixed-layout 语义审计。
+- 长篇漫画可以按章节数或体积切成分册，避免超大单文件影响阅读器稳定性。
 
 ## 最近更新
 
-`2026-04-16`
+`2026-05-31`
 
 - 合订本与分册默认发布到 `library/`，重复执行直接覆盖稳定结果，不再要求用户去 `runs/` 里找最终文件。
+- 新增 `download-full --resume`，用于复用已有下载并补齐缺失章节。
+- 新增 `publish-library --title <漫画名>`，可把稳定书库同步到外部漫画书库结构。
+- 隐藏的 `.downloading` 临时目录会被排除，不会误当作正式章节。
 - Apple Books 兼容性继续收敛：补齐 fixed-layout 元数据、作者信息、逐页导航和页数对账逻辑。
 - 新增 `compare-pages`、`scripts/epub_audit.py`、`scripts/epub_pressure.py` 与基础回归测试，便于 agent 和人工一起 debug。
-- `rebuild-merged`、`rebuild-split` 已接入稳定发布逻辑，可从现有单章 EPUB 重新生成最终交付物。
 
 ## 安装
 
@@ -65,6 +83,17 @@ git clone https://github.com/Sanssssssssssssssss/manga-loader-skill.git \
 - 这个仓库的根目录本身就是 skill 目录
 - 某些通用 GitHub skill installer 在对根目录 skill 做 sparse checkout 时，可能只拿到顶层文件，导致 `scripts/`、`vendor/` 等目录缺失
 - 如果安装后发现 skill 目录里缺少这些子目录，改用完整 clone，或让安装器走 full download / full repo 模式
+
+## 复刻后能不能直接用
+
+可以，前提是运行环境满足下面条件：
+
+- Linux 或类 Linux shell 环境
+- Python 3.11+
+- 能访问 CopyManga API
+- `python3 scripts/manga_loader.py bootstrap` 能成功准备 `.runtime/`
+
+仓库不会提交本机 `config/settings.json`、`runs/`、`library/`、`state/`。别人 clone 后第一次运行 `bootstrap` 会生成本地配置和运行目录；这也是为了避免把个人路径、订阅状态和下载产物打包进仓库。
 
 ## 核心亮点
 
@@ -174,6 +203,43 @@ python3 scripts/manga_loader.py subscribe \
 python3 scripts/manga_loader.py subscriptions run --all
 ```
 
+## English Quick Start
+
+```bash
+git clone https://github.com/Sanssssssssssssssss/manga-loader-skill.git
+cd manga-loader-skill
+python3 scripts/manga_loader.py bootstrap
+python3 scripts/manga_loader.py doctor --check-network
+python3 scripts/manga_loader.py search --query "葬送的芙莉莲"
+python3 scripts/manga_loader.py download-full --query "葬送的芙莉莲"
+```
+
+Install as a local Codex skill:
+
+```bash
+git clone https://github.com/Sanssssssssssssssss/manga-loader-skill.git \
+  ~/.codex/skills/manga-loader
+```
+
+Common commands:
+
+```bash
+# Download only the first chapter for a smoke test
+python3 scripts/manga_loader.py download-full --query "葬送的芙莉莲" --chapter-limit 1
+
+# Resume an incomplete download
+python3 scripts/manga_loader.py download-full --query "葬送的芙莉莲" --resume
+
+# Build split volumes for a long series
+python3 scripts/manga_loader.py download-full --query "葬送的芙莉莲" --split-chapters-per-volume 40
+
+# Validate the final EPUB
+python3 scripts/manga_loader.py validate-epub --path "library/<title>/merged/<file>.epub"
+```
+
+The project is not an official CopyManga client. Use it only where you have the right to access and archive the content.
+CopyManga search generally works best with Chinese titles or a known `comic_id`.
+
 ## 常用命令
 
 ```bash
@@ -182,6 +248,9 @@ python3 scripts/manga_loader.py search --query "葬送的芙莉莲"
 
 # 直接下载
 python3 scripts/manga_loader.py download-full --comic-id zangsongdefulilian
+
+# 断点续传 / 补齐缺失章节
+python3 scripts/manga_loader.py download-full --query "葬送的芙莉莲" --resume
 
 # 重建合订本
 python3 scripts/manga_loader.py rebuild-merged \
@@ -215,6 +284,9 @@ python3 scripts/epub_audit.py \
 # 压力测试
 python3 scripts/epub_pressure.py \
   --path library/葬送的芙莉蓮/merged/葬送的芙莉蓮 合订版.epub
+
+# 发布已有稳定书库到外部漫画书库布局
+python3 scripts/manga_loader.py publish-library --title "葬送的芙莉莲"
 ```
 
 ## 配置
@@ -222,16 +294,23 @@ python3 scripts/epub_pressure.py \
 默认配置模板在 `config/settings.example.json`。
 第一次执行 `bootstrap` 时，会自动生成本地 `config/settings.json`。
 
-配置主要分成两层：
+配置主要分成三层：
 
 - `downloader.*`：数据源域名、重试、节奏和并发控制
 - `packaging.*`：命名模板、打包后端、阅读方向、KCC 参数、分册策略
+- `publish.*`：外部漫画书库根目录、合订本文件名、历史备份策略
 
 当前默认命名：
 
 - 单章：`<漫画名> <章节名>.epub`
 - 合订：`<漫画名> 合订版.epub`
 - 分册：`<漫画名> 第XX册.epub`
+
+如果要同步到外部漫画书库，配置 `publish.mangabooks_root` 后运行：
+
+```bash
+python3 scripts/manga_loader.py publish-library --title "<漫画名>"
+```
 
 ## 输出约定
 
@@ -250,6 +329,12 @@ runs/<job-name>/
   report.json
 
 state/subscriptions.json
+
+外部书库（可选）:
+  <mangabooks_root>/<漫画名>/
+    分章/
+    合订本/完整版.epub
+    历史备份/
 ```
 
 含义很明确：
@@ -257,6 +342,7 @@ state/subscriptions.json
 - `library/`：最终给用户阅读的稳定结果
 - `runs/`：本次任务的过程数据、调试信息和过程索引
 - `state/`：订阅状态
+- 外部书库：给现有漫画阅读目录或同步目录使用
 
 如果你只是想“看书在哪”，优先看 `library/`。
 如果你想 debug，优先看 `runs/<job-name>/report.json`。
@@ -326,6 +412,12 @@ manga-loader-skill/
 - YuxuanHan0326，提供 MangaEpubAutomation
 
 这些工作让这个轻量、实用的漫画工作流能更快落地。
+
+## Disclaimer
+
+This project is an unofficial local workflow for personal archiving and EPUB packaging. It is not affiliated with CopyManga or any content provider. Respect the source site's terms, copyright law, and your local regulations.
+
+本项目不是拷贝漫画官方客户端。请只在你有权访问和归档内容的前提下使用，并遵守源站规则、版权要求和所在地法律。
 
 ## License
 
