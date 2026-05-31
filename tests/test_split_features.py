@@ -9,7 +9,7 @@ import sys
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from manga_common import plan_split_volumes, render_name_template  # noqa: E402
+from manga_common import chapter_directories, plan_split_volumes, render_name_template  # noqa: E402
 
 
 def _make_epubs(root: Path, count: int, *, size_step: int = 128) -> list[Path]:
@@ -23,6 +23,15 @@ def _make_epubs(root: Path, count: int, *, size_step: int = 128) -> list[Path]:
 
 
 class SplitFeatureTest(unittest.TestCase):
+    def test_chapter_directories_ignores_hidden_workdirs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "0001 第01话").mkdir()
+            (root / ".downloading 0002 第02话").mkdir()
+            (root / "0003 第03话").mkdir()
+            ordered = chapter_directories(root)
+            self.assertEqual([path.name for path in ordered], ["0001 第01话", "0003 第03话"])
+
     def test_render_name_template_keeps_numeric_formatting(self) -> None:
         rendered = render_name_template("{title} 第{volume_index:02d}册.epub", title="葬送的芙莉蓮", volume_index=3)
         self.assertEqual(rendered, "葬送的芙莉蓮 第03册.epub")

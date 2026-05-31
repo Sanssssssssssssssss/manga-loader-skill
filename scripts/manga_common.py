@@ -58,6 +58,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "jpeg_quality": 90,
         "page_background": "#000000",
     },
+    "publish": {
+        "mangabooks_root": "",
+        "mangabooks_merged_name": "完整版.epub",
+        "archive_previous": True,
+        "chapter_index_width": 4,
+    },
 }
 
 
@@ -626,6 +632,181 @@ def ensure_library_layout(title: str) -> dict[str, Path]:
     return directories
 
 
+def mangabooks_root_dir(settings: dict[str, Any] | None = None) -> Path | None:
+    effective = settings or load_settings()
+    publish = effective.get("publish", {})
+    root_text = str(publish.get("mangabooks_root") or "").strip()
+    if not root_text:
+        return None
+    return Path(root_text).expanduser().resolve()
+
+
+def ensure_mangabooks_layout(title: str, settings: dict[str, Any] | None = None) -> dict[str, Path] | None:
+    root = mangabooks_root_dir(settings)
+    if root is None:
+        return None
+    series_dir = root / safe_path_name(title)
+    directories = {
+        "series": series_dir,
+        "chapters": series_dir / "分章",
+        "merged": series_dir / "合订本",
+        "history": series_dir / "历史备份",
+    }
+    for path in directories.values():
+        path.mkdir(parents=True, exist_ok=True)
+    return directories
+
+
+def _chapter_label_from_series_epub(title: str, epub_path: Path) -> str:
+    stem = epub_path.stem.strip()
+    prefixes = [
+        f"{title} ",
+        f"{safe_path_name(title)} ",
+        f"{title}_",
+        f"{safe_path_name(title)}_",
+    ]
+    for prefix in prefixes:
+        if stem.startswith(prefix):
+            candidate = stem[len(prefix) :].strip()
+            if candidate:
+                return candidate
+    return stem
+
+
+def _clear_directory_files(directory: Path) -> None:
+    for item in directory.iterdir():
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink()
+
+
+def _archive_directory_contents(source_dir: Path, archive_dir: Path) -> list[str]:
+    archived: list[str] = []
+    if not source_dir.exists():
+        return archived
+    source_items = sorted(source_dir.iterdir(), key=lambda path: natural_key(path.name))
+    if not source_items:
+        return archived
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    for item in source_items:
+        destination = archive_dir / item.name
+        shutil.move(str(item), str(destination))
+        archived.append(str(destination))
+    return archived
+
+
+def _history_snapshot_dir(history_root: Path) -> Path:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    candidate = history_root / f"sync_before_update_{stamp}"
+    suffix = 1
+    while candidate.exists():
+        candidate = history_root / f"sync_before_update_{stamp}_{suffix:02d}"
+        suffix += 1
+    return candidate
+
+
+def publish_outputs_to_mangabooks(
+    title: str,
+    chapter_epubs: list[Path] | None,
+    merged_epub: Path | None,
+    split_epubs: list[Path] | None = None,
+    *,
+    settings: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    effective = settings or load_settings()
+    layout = ensure_mangabooks_layout(title, effective)
+    if layout is None:
+        return None
+
+    publish = effective.get("publish", {})
+    chapter_index_width = max(1, int(publish.get("chapter_index_width", 4) or 4))
+    merged_name = render_name_template(str(publish.get("mangabooks_merged_name", "完整版.epub")), title=title, series_title=title)
+    archive_previous = bool(publish.get("archive_previous", True))
+
+    ordered_chapters = [path.resolve() for path in chapter_epubs] if chapter_epubs is not None else None
+    ordered_split = sorted([path.resolve() for path in split_epubs or []], key=lambda path: natural_key(path.name))
+    replace_chapters = ordered_chapters is not None
+    replace_merged = merged_epub is not None or bool(ordered_split)
+
+    archived_chapters: list[str] = []
+    archived_merged: list[str] = []
+    archive_dir: Path | None = None
+    if archive_previous and (replace_chapters or replace_merged):
+        archive_dir = _history_snapshot_dir(layout["history"])
+        if replace_chapters:
+            archived_chapters = _archive_directory_contents(layout["chapters"], archive_dir / "分章")
+        if replace_merged:
+            archived_merged = _archive_directory_contents(layout["merged"], archive_dir / "合订本")
+        if not archived_chapters and not archived_merged:
+            if archive_dir.exists():
+                archive_dir.rmdir()
+            archive_dir = None
+    else:
+        if replace_chapters:
+            _clear_directory_files(layout["chapters"])
+        if replace_merged:
+            _clear_directory_files(layout["merged"])
+
+    chapter_targets: list[str] = []
+    merged_targets: list[str] = []
+    split_targets: list[str] = []
+
+    if ordered_chapters is not None:
+        _clear_directory_files(layout["chapters"])
+        for index, source in enumerate(ordered_chapters, start=1):
+            label = safe_path_name(_chapter_label_from_series_epub(title, source))
+            destination = layout["chapters"] / f"{index:0{chapter_index_width}d} {label}.epub"
+            shutil.copy2(source, destination)
+            chapter_targets.append(str(destination))
+
+    if replace_merged:
+        _clear_directory_files(layout["merged"])
+        if merged_epub is not None:
+            merged_destination = layout["merged"] / merged_name
+            shutil.copy2(merged_epub.resolve(), merged_destination)
+            merged_targets.append(str(merged_destination))
+        for source in ordered_split:
+            destination = layout["merged"] / source.name
+            shutil.copy2(source, destination)
+            split_targets.append(str(destination))
+
+    return {
+        "series_dir": str(layout["series"]),
+        "chapters_dir": str(layout["chapters"]),
+        "merged_dir": str(layout["merged"]),
+        "history_dir": str(layout["history"]),
+        "chapter_count": len(chapter_targets) if ordered_chapters is not None else None,
+        "chapter_files": chapter_targets,
+        "merged_files": merged_targets,
+        "split_files": split_targets,
+        "archive_dir": str(archive_dir) if archive_dir else None,
+        "archived_chapter_files": archived_chapters,
+        "archived_merged_files": archived_merged,
+    }
+
+
+def publish_library_series_to_mangabooks(title: str, settings: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    effective = settings or load_settings()
+    layout = ensure_library_layout(title)
+    meta = read_series_meta(title)
+    chapter_epubs = list_epub_files(layout["chapters"])
+    merged_epubs = list_epub_files(layout["merged"])
+    split_epubs = list_epub_files(layout["volumes"])
+    merged_epub = Path(str(meta.get("latest_merged_epub"))).resolve() if meta.get("latest_merged_epub") else None
+    if merged_epub is not None and not merged_epub.exists():
+        merged_epub = None
+    if merged_epub is None and merged_epubs:
+        merged_epub = merged_epubs[0]
+    return publish_outputs_to_mangabooks(
+        title,
+        chapter_epubs,
+        merged_epub,
+        split_epubs=split_epubs,
+        settings=effective,
+    )
+
+
 def read_series_meta(title: str) -> dict[str, Any]:
     layout = ensure_library_layout(title)
     return read_json(
@@ -727,7 +908,10 @@ def create_subscription(query: str | None, comic_id: str | None, group: str) -> 
 
 
 def chapter_directories(group_dir: Path) -> list[Path]:
-    return sorted([item for item in group_dir.iterdir() if item.is_dir()], key=lambda path: natural_key(path.name))
+    return sorted(
+        [item for item in group_dir.iterdir() if item.is_dir() and not item.name.startswith(".")],
+        key=lambda path: natural_key(path.name),
+    )
 
 
 def locate_downloaded_group_dir(downloads_root: Path) -> Path:
@@ -1333,17 +1517,24 @@ def copy_outputs_to_library(
     merged_name: str,
     author: str,
     *,
+    chapter_epubs: list[Path] | None = None,
     split_epubs: list[Path] | None = None,
 ) -> dict[str, Any]:
+    settings = load_settings()
     layout = ensure_library_layout(title)
     existing_meta = read_series_meta(title)
     chapter_targets: list[str] = []
     volume_targets: list[str] = list(existing_meta.get("latest_split_epubs") or [])
+    chapter_sources = (
+        [path.resolve() for path in chapter_epubs]
+        if chapter_epubs is not None
+        else sorted(epubs_root.glob("*.epub"), key=lambda path: natural_key(path.name))
+    )
     for existing in layout["chapters"].glob("*.epub"):
         existing.unlink()
     for existing in layout["merged"].glob("*.epub"):
         existing.unlink()
-    for source in sorted(epubs_root.glob("*.epub"), key=lambda path: natural_key(path.name)):
+    for source in chapter_sources:
         destination = layout["chapters"] / source.name
         shutil.copy2(source, destination)
         chapter_targets.append(str(destination))
@@ -1369,7 +1560,7 @@ def copy_outputs_to_library(
         "updated_at": utc_now(),
     }
     write_json(layout["meta"], series_meta)
-    return {
+    result = {
         "series_dir": str(layout["series"]),
         "chapter_count": len(chapter_targets),
         "merged_epub": str(merged_target),
@@ -1377,6 +1568,16 @@ def copy_outputs_to_library(
         "volume_count": len(volume_targets),
         "split_epubs": volume_targets,
     }
+    mangabooks_publish = publish_outputs_to_mangabooks(
+        title,
+        chapter_sources,
+        merged_epub.resolve(),
+        split_epubs=split_epubs,
+        settings=settings,
+    )
+    if mangabooks_publish is not None:
+        result["mangabooks"] = mangabooks_publish
+    return result
 
 
 def copy_split_outputs_to_library(title: str, split_epubs: list[Path], author: str) -> dict[str, Any]:
@@ -1419,6 +1620,7 @@ def execute_pipeline(
     split_chapters_per_volume: int | None = None,
     split_max_size_mb: float | None = None,
     split_name_template: str | None = None,
+    resume_existing: bool = False,
 ) -> dict[str, Any]:
     settings = load_settings()
     packaging = settings.get("packaging", {})
@@ -1429,12 +1631,14 @@ def execute_pipeline(
     downloads_root = job_root / "downloads"
     epubs_root = job_root / "epubs"
     merged_root = job_root / "merged"
-    if downloads_root.exists():
+    if downloads_root.exists() and not resume_existing:
         shutil.rmtree(downloads_root)
+    downloads_root.mkdir(parents=True, exist_ok=True)
     epubs_root.mkdir(parents=True, exist_ok=True)
     merged_root.mkdir(parents=True, exist_ok=True)
-    for stale_epub in epubs_root.glob("*.epub"):
-        stale_epub.unlink()
+    if not resume_existing:
+        for stale_epub in epubs_root.glob("*.epub"):
+            stale_epub.unlink()
     for stale_epub in merged_root.glob("*.epub"):
         stale_epub.unlink()
 
@@ -1523,6 +1727,7 @@ def execute_pipeline(
         merged_epub,
         merged_file_name,
         author,
+        chapter_epubs=chapter_epubs,
         split_epubs=split_epubs,
     )
 
@@ -1533,6 +1738,7 @@ def execute_pipeline(
         "group": group,
         "remote_chapter_count": len(remote_chapters),
         "requested_chapter_limit": chapter_limit,
+        "resumed_existing_job": resume_existing,
         "job_root": str(job_root),
         "downloads_root": str(downloads_root),
         "group_dir": str(group_dir),

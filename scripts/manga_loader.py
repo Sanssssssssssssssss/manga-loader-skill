@@ -23,6 +23,7 @@ from manga_common import (
     load_settings,
     load_subscriptions,
     plan_split_volumes,
+    publish_library_series_to_mangabooks,
     preview_epub,
     rebuild_merged_from_epubs,
     rebuild_split_merged_from_epubs,
@@ -131,6 +132,7 @@ def command_download_full(args: argparse.Namespace) -> int:
         split_chapters_per_volume=args.split_chapters_per_volume,
         split_max_size_mb=args.split_max_size_mb,
         split_name_template=args.split_name_template,
+        resume_existing=args.resume,
     )
 
     response: dict[str, object] = {"job_name": job_name, "report": report}
@@ -260,6 +262,14 @@ def command_show_series(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_publish_library(args: argparse.Namespace) -> int:
+    report = publish_library_series_to_mangabooks(args.title)
+    if report is None:
+        raise SystemExit("publish.mangabooks_root is not configured")
+    print_json(report)
+    return 0
+
+
 def command_disable_subscription(args: argparse.Namespace) -> int:
     subscriptions = load_subscriptions()
     needle = get_subscription_record(args.subscription)["subscription_id"]
@@ -335,6 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     download.add_argument("--split-chapters-per-volume", type=int)
     download.add_argument("--split-max-size-mb", type=float)
     download.add_argument("--split-name-template")
+    download.add_argument("--resume", action="store_true", help="Reuse existing job downloads and chapter EPUBs")
     download.add_argument("--subscribe", action="store_true")
     download.set_defaults(func=command_download_full)
 
@@ -391,6 +402,10 @@ def build_parser() -> argparse.ArgumentParser:
     show = subparsers.add_parser("show-series", help="Show the local library directory for a manga title")
     show.add_argument("--title", required=True)
     show.set_defaults(func=command_show_series)
+
+    publish_library = subparsers.add_parser("publish-library", help="Publish an existing library series into the external manga lib layout")
+    publish_library.add_argument("--title", required=True)
+    publish_library.set_defaults(func=command_publish_library)
     return parser
 
 

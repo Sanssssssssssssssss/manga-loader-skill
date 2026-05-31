@@ -180,6 +180,34 @@ python3 scripts/manga_loader.py subscribe \
 
 - `state/subscriptions.json`
 
+## 本机 SSD 与发布契约
+
+当前本机部署已经把 `.runtime/`、`runs/`、`library/`、`state/` 放到：
+
+- `/mnt/ssd/manga-storage/manga-loader-skill/`
+
+下载、订阅刷新、重建和调试时，优先让过程产物留在 SSD 上，避免系统盘被 `runs/` 吃满。不要把 `.downloading` 这类隐藏临时目录当作正式章节；它们只是下载中的 `临时目录`，不能直接引用、打包或发布。
+
+对接当前外部漫画书库时，目标结构在：
+
+- `/mnt/ssd/manga-storage/mangabooks-lib/<漫画名>/分章/`
+- `/mnt/ssd/manga-storage/mangabooks-lib/<漫画名>/合订本/完整版.epub`
+- `/mnt/ssd/manga-storage/mangabooks-lib/<漫画名>/历史备份/`
+
+已有 `library/<漫画名>/...` 需要同步到外部漫画书库时，使用：
+
+```bash
+python3 scripts/manga_loader.py publish-library --title "<漫画名>"
+```
+
+不完整下载继续处理前，优先用：
+
+```bash
+python3 scripts/manga_loader.py download-full --query "<漫画名>" --resume
+```
+
+`--resume` 应复用已下载章节并补齐缺失章节。重建合订本或分册时，保持 `report.json` 或章节元数据里的章节顺序和原始下载顺序，不要按文件名重新猜顺序。
+
 如果你要判断任务是否真的完成，优先检查：
 
 - 命令退出码

@@ -26,5 +26,11 @@
     "kcc_extra_args": [],
     "jpeg_quality": 90,
     "page_background": "#000000"
+  },
+  "publish": {
+    "mangabooks_root": "",
+    "mangabooks_merged_name": "完整版.epub",
+    "archive_previous": true,
+    "chapter_index_width": 4
   }
 }
